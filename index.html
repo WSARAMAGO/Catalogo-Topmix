@@ -59,7 +59,15 @@
     -webkit-appearance:none;
   }
   #campo-pesquisa:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(255,128,26,.15);}
+  .linha-info{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}
   .contador{font-size:.82rem;color:var(--navy-600);font-weight:600;padding-left:.15rem;}
+  .btn-pdf{
+    background:var(--white);color:var(--navy-800);border:1.5px solid var(--gray-200);
+    padding:.4rem .75rem;border-radius:7px;font-size:.78rem;font-weight:700;
+    cursor:pointer;white-space:nowrap;flex-shrink:0;
+  }
+  .btn-pdf:hover{border-color:var(--orange);}
+  .btn-pdf:disabled{opacity:.6;cursor:wait;}
 
   main.grid{
     max-width:1200px;margin:1.25rem auto 0;padding:0 1rem;
@@ -104,9 +112,17 @@
   .btn-qtd:active{background:var(--gray-200);}
   .qtd-input-card{
     flex-grow:1;min-width:0;border:none;border-left:1.5px solid var(--gray-200);border-right:1.5px solid var(--gray-200);
-    text-align:center;font-size:.95rem;font-weight:600;color:var(--navy-800);-moz-appearance:textfield;
+    text-align:center;font-size:.95rem;font-weight:600;color:var(--navy-800);
   }
-  .qtd-input-card::-webkit-outer-spin-button,.qtd-input-card::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+
+  .mensagem-flutuante{
+    position:fixed;left:50%;bottom:4.8rem;transform:translate(-50%, 12px);
+    background:var(--navy-900);color:var(--white);
+    padding:.65rem 1.1rem;border-radius:8px;font-size:.85rem;font-weight:600;
+    box-shadow:var(--shadow-md);z-index:150;max-width:90%;text-align:center;
+    opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;
+  }
+  .mensagem-flutuante.visivel{opacity:1;transform:translate(-50%, 0);}
 
   .btn-add{
     background:linear-gradient(90deg,var(--orange),var(--gold));
@@ -167,6 +183,27 @@
     .barra-carrinho{padding:.7rem .9rem;}
     .barra-carrinho strong{font-size:.8rem;}
   }
+
+  #area-impressao{display:none;}
+  @media print{
+    @page{margin:12mm;}
+    body *{visibility:hidden;}
+    #area-impressao, #area-impressao *{visibility:visible;}
+    #area-impressao{display:block;position:absolute;top:0;left:0;width:100%;}
+    .capa-pdf{page-break-after:always;text-align:center;padding-top:18%;}
+    .capa-pdf img{max-width:260px;margin-bottom:1.5rem;}
+    .capa-pdf h1{font-size:2rem;color:var(--navy-800);margin:.3rem 0;}
+    .capa-pdf p{color:var(--navy-600);font-size:1rem;margin:.2rem 0;}
+    .lista-pdf{display:grid;grid-template-columns:1fr 1fr;gap:.3rem 1.2rem;padding:0 6mm;}
+    .item-pdf{display:flex;gap:.5rem;align-items:center;border-bottom:1px solid var(--gray-200);padding:.3rem 0;break-inside:avoid;}
+    .item-pdf img{width:42px;height:42px;object-fit:contain;border:1px solid var(--gray-200);flex-shrink:0;}
+    .item-pdf .sem-foto{
+      width:42px;height:42px;border:1px solid var(--gray-200);flex-shrink:0;
+      display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--gray-400);
+    }
+    .item-pdf .txt{font-size:.68rem;line-height:1.25;}
+    .item-pdf .cod{font-weight:700;}
+  }
 </style>
 </head>
 <body>
@@ -184,7 +221,10 @@
       <span aria-hidden="true">🔍</span>
       <input type="search" id="campo-pesquisa" placeholder="Buscar por código ou descrição do produto..." aria-label="Buscar produto" autocomplete="off">
     </div>
-    <span id="contador-busca" class="contador"></span>
+    <div class="linha-info">
+      <span id="contador-busca" class="contador"></span>
+      <button class="btn-pdf" id="btn-pdf" title="Gerar o catálogo completo em PDF">🖨️ PDF do catálogo</button>
+    </div>
   </div>
 </div>
 
@@ -192,6 +232,10 @@
 <div class="sentinela" id="sentinela"></div>
 
 <button class="btn-topo" id="btn-topo" aria-label="Voltar ao topo" title="Voltar ao topo">↑</button>
+
+<div class="mensagem-flutuante" id="mensagem-flutuante" role="status" aria-live="polite"></div>
+
+<div id="area-impressao" aria-hidden="true"></div>
 
 <div class="barra-carrinho">
   <strong id="qtd-itens-barra">Nenhum produto selecionado</strong>
@@ -234,6 +278,7 @@
 
   var CHAVE_CARRINHO = "topmix_orcamento_v1";
   var TAMANHO_PAGINA = 60;
+  var LIMITE_QTD = 999;
 
   var carrinho = carregarCarrinho();
   var listaFiltrada = PRODUTOS;
@@ -246,6 +291,30 @@
   var modal = document.getElementById("modal-orcamento");
   var tbody = document.getElementById("lista-orcamento");
   var btnTopo = document.getElementById("btn-topo");
+  var btnPdf = document.getElementById("btn-pdf");
+  var areaImpressao = document.getElementById("area-impressao");
+  var elMensagem = document.getElementById("mensagem-flutuante");
+  var timeoutMensagem = null;
+
+  function mostrarMensagem(texto) {
+    elMensagem.textContent = texto;
+    elMensagem.classList.add("visivel");
+    clearTimeout(timeoutMensagem);
+    timeoutMensagem = setTimeout(function () { elMensagem.classList.remove("visivel"); }, 2400);
+  }
+
+  // Aceita só dígitos e nunca deixa passar de LIMITE_QTD; avisa quando corrige algo
+  function sanitizarQuantidade(valorBruto) {
+    var somenteNumeros = valorBruto.replace(/[^0-9]/g, "");
+    var teveLetra = somenteNumeros.length !== valorBruto.length;
+    var excedeu = false;
+    if (somenteNumeros !== "") {
+      var n = parseInt(somenteNumeros, 10);
+      if (n > LIMITE_QTD) { n = LIMITE_QTD; excedeu = true; }
+      somenteNumeros = String(n);
+    }
+    return { valor: somenteNumeros, teveLetra: teveLetra, excedeu: excedeu };
+  }
 
   function carregarCarrinho() {
     try {
@@ -277,7 +346,7 @@
         '<h2 class="produto-descricao"></h2>' +
         '<div class="stepper">' +
           '<button type="button" class="btn-qtd" data-acao="menos" aria-label="Diminuir quantidade">−</button>' +
-          '<input type="number" class="qtd-input-card" value="1" min="1" inputmode="numeric" aria-label="Quantidade">' +
+          '<input type="text" class="qtd-input-card" value="1" inputmode="numeric" pattern="[0-9]*" maxlength="3" aria-label="Quantidade">' +
           '<button type="button" class="btn-qtd" data-acao="mais" aria-label="Aumentar quantidade">+</button>' +
         '</div>' +
         '<button type="button" class="btn-add">+ Adicionar ao orçamento</button>' +
@@ -350,7 +419,12 @@
     if (btnQtd) {
       var input = btnQtd.parentElement.querySelector(".qtd-input-card");
       var valor = parseInt(input.value, 10) || 1;
-      valor = btnQtd.dataset.acao === "mais" ? valor + 1 : Math.max(1, valor - 1);
+      if (btnQtd.dataset.acao === "mais") {
+        if (valor >= LIMITE_QTD) { mostrarMensagem("Quantidade máxima: 999 unidades."); valor = LIMITE_QTD; }
+        else { valor += 1; }
+      } else {
+        valor = Math.max(1, valor - 1);
+      }
       input.value = valor;
       return;
     }
@@ -361,6 +435,7 @@
       var inputQtd = card.querySelector(".qtd-input-card");
       var qtd = parseInt(inputQtd.value, 10);
       if (!qtd || qtd < 1) qtd = 1;
+      if (qtd > LIMITE_QTD) qtd = LIMITE_QTD;
       adicionarAoCarrinho(codigo, qtd);
       inputQtd.value = 1;
       var textoOriginal = btnAdd.textContent;
@@ -370,10 +445,28 @@
     }
   });
 
+  // Sanitiza a quantidade enquanto o usuário digita (bloqueia letras, trava em 999)
+  grid.addEventListener("input", function (e) {
+    if (!e.target.classList.contains("qtd-input-card")) return;
+    var r = sanitizarQuantidade(e.target.value);
+    e.target.value = r.valor;
+    if (r.excedeu) mostrarMensagem("Quantidade máxima: 999 unidades.");
+    else if (r.teveLetra) mostrarMensagem("Digite apenas números.");
+  });
+  grid.addEventListener("focusout", function (e) {
+    if (!e.target.classList.contains("qtd-input-card")) return;
+    if (e.target.value === "" || parseInt(e.target.value, 10) < 1) e.target.value = 1;
+  });
+
   function adicionarAoCarrinho(codigo, qtd) {
     var descricao = PRODUTOS_MAP.get(String(codigo));
     var item = carrinho.find(function (i) { return String(i.codigo) === String(codigo); });
-    if (item) { item.qtd += qtd; } else { carrinho.push({ codigo: codigo, descricao: descricao, qtd: qtd }); }
+    if (item) {
+      item.qtd += qtd;
+      if (item.qtd > LIMITE_QTD) { item.qtd = LIMITE_QTD; mostrarMensagem("Quantidade máxima de 999 atingida para este item."); }
+    } else {
+      carrinho.push({ codigo: codigo, descricao: descricao, qtd: qtd });
+    }
     salvarCarrinho();
     atualizarBarra();
   }
@@ -404,7 +497,8 @@
 
       var tdQtd = document.createElement("td");
       var inputQtd = document.createElement("input");
-      inputQtd.type = "number"; inputQtd.className = "qtd-input"; inputQtd.min = 1;
+      inputQtd.type = "text"; inputQtd.className = "qtd-input";
+      inputQtd.inputMode = "numeric"; inputQtd.setAttribute("pattern", "[0-9]*"); inputQtd.maxLength = 3;
       inputQtd.value = item.qtd; inputQtd.dataset.index = index;
       tdQtd.appendChild(inputQtd);
 
@@ -419,11 +513,20 @@
     tbody.appendChild(frag);
   }
 
+  tbody.addEventListener("input", function (e) {
+    if (!e.target.classList.contains("qtd-input")) return;
+    var r = sanitizarQuantidade(e.target.value);
+    e.target.value = r.valor;
+    if (r.excedeu) mostrarMensagem("Quantidade máxima: 999 unidades.");
+    else if (r.teveLetra) mostrarMensagem("Digite apenas números.");
+  });
+
   tbody.addEventListener("change", function (e) {
     if (e.target.classList.contains("qtd-input")) {
       var idx = parseInt(e.target.dataset.index, 10);
       var n = parseInt(e.target.value, 10);
       if (!n || n < 1) n = 1;
+      if (n > LIMITE_QTD) n = LIMITE_QTD;
       carrinho[idx].qtd = n;
       e.target.value = n;
       salvarCarrinho();
@@ -474,6 +577,72 @@
     btnTopo.classList.toggle("visivel", window.scrollY > 900);
   }, { passive: true });
   btnTopo.addEventListener("click", function () { window.scrollTo({ top: 0, behavior: "smooth" }); });
+
+  // Gera o PDF: monta uma capa + a lista completa (com fotos, quando existirem)
+  // dentro de #area-impressao, espera as fotos tentarem carregar e chama window.print().
+  function gerarPDF() {
+    if (btnPdf.disabled) return;
+    btnPdf.disabled = true;
+    var textoOriginal = btnPdf.textContent;
+    btnPdf.textContent = "Preparando PDF...";
+
+    areaImpressao.innerHTML = "";
+
+    var capa = document.createElement("div");
+    capa.className = "capa-pdf";
+    var logoImg = document.createElement("img");
+    logoImg.src = document.querySelector(".topo img").src;
+    logoImg.alt = "Topmix";
+    var h1 = document.createElement("h1");
+    h1.textContent = "Catálogo de Produtos";
+    var sub = document.createElement("p");
+    sub.textContent = "Soldas · Abrasivos · Tintas";
+    var dataP = document.createElement("p");
+    dataP.textContent = "Gerado em " + new Date().toLocaleDateString("pt-BR") + " — " + PRODUTOS.length + " produtos";
+    capa.appendChild(logoImg); capa.appendChild(h1); capa.appendChild(sub); capa.appendChild(dataP);
+    areaImpressao.appendChild(capa);
+
+    var lista = document.createElement("div");
+    lista.className = "lista-pdf";
+    var promessas = [];
+
+    PRODUTOS.forEach(function (p) {
+      var item = document.createElement("div");
+      item.className = "item-pdf";
+
+      var img = document.createElement("img");
+      img.alt = "";
+      var semFoto = document.createElement("span");
+      semFoto.className = "sem-foto";
+      semFoto.textContent = "🧰";
+
+      promessas.push(new Promise(function (resolve) {
+        img.addEventListener("load", function () { semFoto.remove(); resolve(); });
+        img.addEventListener("error", function () { img.remove(); resolve(); });
+        img.src = "img/" + p[0] + ".jpg";
+      }));
+
+      var txt = document.createElement("div");
+      txt.className = "txt";
+      var cod = document.createElement("div"); cod.className = "cod"; cod.textContent = "Cód " + p[0];
+      var desc = document.createElement("div"); desc.textContent = p[1];
+      txt.appendChild(cod); txt.appendChild(desc);
+
+      item.appendChild(img); item.appendChild(semFoto); item.appendChild(txt);
+      lista.appendChild(item);
+    });
+    areaImpressao.appendChild(lista);
+
+    var tempoLimite = new Promise(function (resolve) { setTimeout(resolve, 8000); });
+    Promise.race([Promise.all(promessas), tempoLimite]).then(function () {
+      btnPdf.textContent = textoOriginal;
+      btnPdf.disabled = false;
+      window.print();
+    });
+  }
+
+  btnPdf.addEventListener("click", gerarPDF);
+  window.addEventListener("afterprint", function () { areaImpressao.innerHTML = ""; });
 
   // Inicialização
   renderizarPagina();
