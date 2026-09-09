@@ -206,6 +206,7 @@
       padding:.4rem 6mm;margin:.6rem 0 .3rem;text-transform:uppercase;letter-spacing:.04em;
       break-after:avoid;break-inside:avoid;
     }
+    .categoria-pdf-titulo.nova-pagina{page-break-before:always;break-before:page;}
     .lista-pdf{display:grid;grid-template-columns:1fr 1fr;gap:.3rem 1.2rem;padding:0 6mm;}
     .item-pdf{display:flex;gap:.5rem;align-items:center;border-bottom:1px solid var(--gray-200);padding:.3rem 0;break-inside:avoid;}
     .item-pdf img{width:42px;height:42px;object-fit:contain;border:1px solid var(--gray-200);flex-shrink:0;}
@@ -670,9 +671,9 @@
     });
 
     var promessas = [];
-    categoriasOrdenadas.forEach(function (cat) {
+    categoriasOrdenadas.forEach(function (cat, indiceCategoria) {
       var tituloCat = document.createElement("h2");
-      tituloCat.className = "categoria-pdf-titulo";
+      tituloCat.className = "categoria-pdf-titulo" + (indiceCategoria > 0 ? " nova-pagina" : "");
       tituloCat.textContent = cat;
       areaImpressao.appendChild(tituloCat);
 
