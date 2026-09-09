@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Produtos - Topmix</title>
+<style>
+  :root{
+    --navy-900:#141b28; --navy-800:#1f2a38; --navy-600:#4a5467;
+    --gray-100:#f6f7f9; --gray-200:#e7ebf0; --gray-400:#94a3b8;
+    --gold:#ffd035; --orange:#ff801a; --white:#fff;
+    --green:#1ebe5b; --red:#dc2626;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--gray-100);color:var(--navy-800);}
+  header{background:var(--navy-800);color:var(--white);padding:1rem 1.25rem;}
+  header h1{margin:0;font-size:1.15rem;}
+  header p{margin:.3rem 0 0;color:#c7cdd6;font-size:.85rem;}
+
+  .barra{
+    position:sticky;top:0;z-index:10;background:var(--white);border-bottom:1px solid var(--gray-200);
+    padding:.9rem 1.25rem;display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;
+  }
+  .barra input[type="search"]{
+    flex:1;min-width:200px;padding:.55rem .8rem;border:1.5px solid var(--gray-200);border-radius:7px;font-size:.9rem;
+  }
+  .barra .contador{font-size:.82rem;color:var(--navy-600);font-weight:600;white-space:nowrap;}
+  button{cursor:pointer;font-family:inherit;border:none;border-radius:7px;font-weight:700;font-size:.85rem;padding:.6rem 1rem;}
+  .btn-add{background:var(--navy-800);color:var(--white);}
+  .btn-baixar{background:linear-gradient(90deg,var(--orange),var(--gold));color:var(--navy-900);}
+  .btn-baixar:hover, .btn-add:hover{filter:brightness(1.08);}
+
+  main{padding:1rem 1.25rem 3rem;overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;background:var(--white);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(20,27,40,.08);}
+  thead th{
+    text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;color:var(--navy-600);
+    padding:.6rem .6rem;border-bottom:2px solid var(--gray-200);white-space:nowrap;background:var(--gray-100);
+    position:sticky;top:64px;
+  }
+  tbody td{padding:.4rem .6rem;border-bottom:1px solid var(--gray-200);vertical-align:middle;}
+  tbody tr.escondida{display:none;}
+  tbody tr.inativo{opacity:.55;}
+  tbody tr.linha-nova{background:#fffbea;}
+
+  td.col-codigo{width:80px;}
+  td.col-categoria{width:190px;}
+  td.col-ativo{width:70px;text-align:center;}
+  td.col-acao{width:90px;}
+
+  input.campo-codigo, input.campo-descricao, input.campo-categoria{
+    width:100%;padding:.4rem .5rem;border:1.5px solid transparent;border-radius:5px;font-size:.85rem;
+    background:transparent;color:var(--navy-800);
+  }
+  input.campo-codigo:hover, input.campo-descricao:hover, input.campo-categoria:hover,
+  input.campo-codigo:focus, input.campo-descricao:focus, input.campo-categoria:focus{
+    border-color:var(--gray-200);background:var(--gray-100);outline:none;
+  }
+  input.campo-codigo{width:70px;font-weight:700;}
+
+  input[type="checkbox"].chk-ativo{width:20px;height:20px;cursor:pointer;}
+
+  .btn-remover{background:#fee2e2;color:var(--red);padding:.4rem .6rem;font-size:.78rem;white-space:nowrap;}
+  .btn-remover:hover{background:#fecaca;}
+
+  .rodape-fixo{
+    position:sticky;bottom:0;background:var(--white);border-top:1px solid var(--gray-200);
+    padding:.8rem 1.25rem;display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;
+    box-shadow:0 -4px 12px rgba(0,0,0,.06);
+  }
+  .aviso{font-size:.8rem;color:var(--navy-600);}
+  .aviso.erro{color:var(--red);font-weight:700;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🛠️ Painel de Produtos — Topmix</h1>
+  <p>Edite, ative/desative, adicione ou remova produtos aqui. Depois baixe o arquivo atualizado e suba no GitHub.</p>
+</header>
+
+<div class="barra">
+  <input type="search" id="campo-busca-admin" placeholder="Buscar por código ou descrição..." autocomplete="off">
+  <span class="contador" id="contador-admin"></span>
+  <button class="btn-add" id="btn-adicionar">+ Adicionar produto</button>
+  <button class="btn-baixar" id="btn-baixar">⬇️ Baixar produtos.js atualizado</button>
+</div>
+
+<main>
+  <table>
+    <thead>
+      <tr>
+        <th>Código</th>
+        <th>Descrição</th>
+        <th>Categoria</th>
+        <th>Ativo</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="corpo-tabela"></tbody>
+  </table>
+</main>
+
+<datalist id="lista-categorias-conhecidas"></datalist>
+
+<div class="rodape-fixo">
+  <span class="aviso" id="aviso-baixo">As alterações ficam só nesta tela até você clicar em "Baixar produtos.js atualizado".</span>
+</div>
+
+<script src="produtos.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var dados = (typeof PRODUTOS_DADOS !== "undefined" ? PRODUTOS_DADOS : []).map(function (p) {
+    return { codigo: p.codigo, descricao: p.descricao, categoria: p.categoria || "", ativo: p.ativo !== false };
+  });
+
+  var CATEGORIAS_CONHECIDAS = [
+    "Soldagem", "Abrasivos", "Tintas e Pintura", "Ferramentas Elétricas",
+    "Ferramentas Manuais", "Brocas e Acessórios", "Fixadores e Química",
+    "EPI - Proteção", "Máquinas e Equipamentos", "Outros"
+  ];
+  var listaCategorias = document.getElementById("lista-categorias-conhecidas");
+  CATEGORIAS_CONHECIDAS.forEach(function (c) {
+    var opt = document.createElement("option");
+    opt.value = c;
+    listaCategorias.appendChild(opt);
+  });
+
+  var corpo = document.getElementById("corpo-tabela");
+  var campoBusca = document.getElementById("campo-busca-admin");
+  var contador = document.getElementById("contador-admin");
+  var avisoBaixo = document.getElementById("aviso-baixo");
+
+  function normalizar(t) {
+    return String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function criarLinha(item, index, ehNova) {
+    var tr = document.createElement("tr");
+    tr.dataset.index = index;
+    if (!item.ativo) tr.classList.add("inativo");
+    if (ehNova) tr.classList.add("linha-nova");
+
+    var tdCod = document.createElement("td"); tdCod.className = "col-codigo";
+    var inCod = document.createElement("input");
+    inCod.className = "campo-codigo"; inCod.type = "text"; inCod.inputMode = "numeric";
+    inCod.value = item.codigo === null ? "" : item.codigo;
+    tdCod.appendChild(inCod);
+
+    var tdDesc = document.createElement("td");
+    var inDesc = document.createElement("input");
+    inDesc.className = "campo-descricao"; inDesc.type = "text"; inDesc.value = item.descricao;
+    tdDesc.appendChild(inDesc);
+
+    var tdCat = document.createElement("td"); tdCat.className = "col-categoria";
+    var inCat = document.createElement("input");
+    inCat.className = "campo-categoria"; inCat.type = "text"; inCat.value = item.categoria;
+    inCat.setAttribute("list", "lista-categorias-conhecidas");
+    tdCat.appendChild(inCat);
+
+    var tdAtivo = document.createElement("td"); tdAtivo.className = "col-ativo";
+    var chk = document.createElement("input");
+    chk.type = "checkbox"; chk.className = "chk-ativo"; chk.checked = item.ativo;
+    tdAtivo.appendChild(chk);
+
+    var tdAcao = document.createElement("td"); tdAcao.className = "col-acao";
+    var btnRem = document.createElement("button");
+    btnRem.className = "btn-remover"; btnRem.type = "button"; btnRem.textContent = "Remover";
+    tdAcao.appendChild(btnRem);
+
+    tr.appendChild(tdCod); tr.appendChild(tdDesc); tr.appendChild(tdCat); tr.appendChild(tdAtivo); tr.appendChild(tdAcao);
+
+    inCod.addEventListener("input", function () {
+      var v = inCod.value.replace(/[^0-9]/g, "");
+      inCod.value = v;
+      dados[index].codigo = v === "" ? null : parseInt(v, 10);
+    });
+    inDesc.addEventListener("input", function () { dados[index].descricao = inDesc.value; });
+    inCat.addEventListener("input", function () { dados[index].categoria = inCat.value; });
+    chk.addEventListener("change", function () {
+      dados[index].ativo = chk.checked;
+      tr.classList.toggle("inativo", !chk.checked);
+      atualizarContador();
+    });
+    btnRem.addEventListener("click", function () {
+      if (!confirm("Remover o produto \"" + (dados[index].descricao || "sem descrição") + "\" da lista?")) return;
+      dados[index] = null;
+      tr.remove();
+      atualizarContador();
+    });
+
+    return tr;
+  }
+
+  function renderizarTudo() {
+    corpo.innerHTML = "";
+    var frag = document.createDocumentFragment();
+    dados.forEach(function (item, index) {
+      if (item === null) return;
+      frag.appendChild(criarLinha(item, index, false));
+    });
+    corpo.appendChild(frag);
+    atualizarContador();
+  }
+
+  function atualizarContador() {
+    var total = dados.filter(function (d) { return d !== null; }).length;
+    var ativos = dados.filter(function (d) { return d !== null && d.ativo; }).length;
+    contador.textContent = total + " produtos (" + ativos + " ativos)";
+  }
+
+  var timeoutBusca = null;
+  campoBusca.addEventListener("input", function () {
+    clearTimeout(timeoutBusca);
+    timeoutBusca = setTimeout(function () {
+      var termo = normalizar(campoBusca.value.trim());
+      Array.from(corpo.children).forEach(function (tr) {
+        var idx = parseInt(tr.dataset.index, 10);
+        var item = dados[idx];
+        if (!item) return;
+        var passa = !termo || String(item.codigo).indexOf(termo) !== -1 || normalizar(item.descricao).indexOf(termo) !== -1;
+        tr.classList.toggle("escondida", !passa);
+      });
+    }, 150);
+  });
+
+  document.getElementById("btn-adicionar").addEventListener("click", function () {
+    var maiorCodigo = dados.reduce(function (max, d) { return d && d.codigo > max ? d.codigo : max; }, 0);
+    var novo = { codigo: maiorCodigo + 1, descricao: "", categoria: "", ativo: true };
+    var index = dados.length;
+    dados.push(novo);
+    var linha = criarLinha(novo, index, true);
+    corpo.insertBefore(linha, corpo.firstChild);
+    linha.scrollIntoView({ behavior: "smooth", block: "center" });
+    linha.querySelector(".campo-descricao").focus();
+    atualizarContador();
+  });
+
+  document.getElementById("btn-baixar").addEventListener("click", function () {
+    var validos = dados.filter(function (d) { return d !== null; });
+
+    var semCodigo = validos.filter(function (d) { return !d.codigo || d.codigo <= 0; });
+    var semDescricao = validos.filter(function (d) { return !d.descricao || !d.descricao.trim(); });
+    var contagemCodigos = {};
+    validos.forEach(function (d) { contagemCodigos[d.codigo] = (contagemCodigos[d.codigo] || 0) + 1; });
+    var duplicados = Object.keys(contagemCodigos).filter(function (c) { return contagemCodigos[c] > 1; });
+
+    if (semCodigo.length || semDescricao.length || duplicados.length) {
+      var msg = "Antes de baixar, corrija:\n";
+      if (semCodigo.length) msg += "- " + semCodigo.length + " produto(s) sem código válido\n";
+      if (semDescricao.length) msg += "- " + semDescricao.length + " produto(s) sem descrição\n";
+      if (duplicados.length) msg += "- código(s) repetido(s): " + duplicados.join(", ") + "\n";
+      avisoBaixo.textContent = msg.replace(/\n/g, " ");
+      avisoBaixo.classList.add("erro");
+      alert(msg);
+      return;
+    }
+    avisoBaixo.classList.remove("erro");
+
+    validos.sort(function (a, b) { return a.codigo - b.codigo; });
+
+    var linhas = validos.map(function (d) {
+      return "{codigo:" + d.codigo + ",descricao:" + JSON.stringify(d.descricao.trim()) +
+        ",categoria:" + JSON.stringify(d.categoria.trim() || "Outros") + ",ativo:" + (d.ativo ? "true" : "false") + "}";
+    });
+
+    var conteudo =
+      "// ============================================================\n" +
+      "// PRODUTOS.JS — base de dados do catálogo Topmix\n" +
+      "// Gerado pelo painel admin.html em " + new Date().toLocaleString("pt-BR") + "\n" +
+      "// ============================================================\n" +
+      "var PRODUTOS_DADOS = [\n" + linhas.join(",\n") + "\n];\n";
+
+    var blob = new Blob([conteudo], { type: "text/javascript;charset=utf-8" });
+    var link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "produtos.js";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+
+  renderizarTudo();
+})();
+</script>
+</body>
+</html>
