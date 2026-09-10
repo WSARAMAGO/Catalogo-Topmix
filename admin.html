@@ -27,20 +27,32 @@
   .barra .contador{font-size:.82rem;color:var(--navy-600);font-weight:600;white-space:nowrap;}
   button{cursor:pointer;font-family:inherit;border:none;border-radius:7px;font-weight:700;font-size:.85rem;padding:.6rem 1rem;}
   .btn-add{background:var(--navy-800);color:var(--white);}
+  .btn-cat{background:var(--white);color:var(--navy-800);border:1.5px solid var(--gray-200) !important;}
+  .btn-cat:hover{border-color:var(--orange) !important;}
   .btn-baixar{background:linear-gradient(90deg,var(--orange),var(--gold));color:var(--navy-900);}
   .btn-baixar:hover, .btn-add:hover{filter:brightness(1.08);}
+
+  .faixa-rascunho{
+    background:#fff7e0;border-bottom:1px solid var(--gold);padding:.6rem 1.25rem;
+    display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.85rem;
+  }
+  .faixa-rascunho button{padding:.4rem .8rem;font-size:.78rem;}
+  .btn-restaurar{background:var(--navy-800);color:var(--white);}
+  .btn-descartar{background:none;color:var(--navy-600);border:1.5px solid var(--gray-200) !important;}
 
   main{padding:1rem 1.25rem 3rem;overflow-x:auto;}
   table{width:100%;border-collapse:collapse;background:var(--white);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(20,27,40,.08);}
   thead th{
     text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;color:var(--navy-600);
     padding:.6rem .6rem;border-bottom:2px solid var(--gray-200);white-space:nowrap;background:var(--gray-100);
-    position:sticky;top:64px;
+    position:sticky;top:0;
   }
   tbody td{padding:.4rem .6rem;border-bottom:1px solid var(--gray-200);vertical-align:middle;}
   tbody tr.escondida{display:none;}
   tbody tr.inativo{opacity:.55;}
   tbody tr.linha-nova{background:#fffbea;}
+  tbody tr.linha-erro{background:#fee2e2;}
+  tbody tr.linha-erro td{border-color:#fca5a5;}
 
   td.col-codigo{width:80px;}
   td.col-categoria{width:190px;}
@@ -69,6 +81,17 @@
   }
   .aviso{font-size:.8rem;color:var(--navy-600);}
   .aviso.erro{color:var(--red);font-weight:700;}
+
+  .modal-fundo{display:none;position:fixed;inset:0;background:rgba(20,27,40,.6);z-index:200;justify-content:center;align-items:center;padding:1rem;}
+  .modal-fundo.aberto{display:flex;}
+  .modal-caixa{background:var(--white);border-radius:10px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:1.25rem;}
+  .modal-caixa h2{margin:0 0 1rem;font-size:1.05rem;}
+  .linha-categoria{display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;}
+  .linha-categoria input{flex:1;padding:.5rem .6rem;border:1.5px solid var(--gray-200);border-radius:6px;font-size:.85rem;}
+  .linha-categoria .contagem-cat{font-size:.72rem;color:var(--navy-600);white-space:nowrap;min-width:70px;text-align:right;}
+  .nova-categoria{display:flex;gap:.5rem;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--gray-200);}
+  .nova-categoria input{flex:1;padding:.5rem .6rem;border:1.5px solid var(--gray-200);border-radius:6px;font-size:.85rem;}
+  .btn-fechar-modal{width:100%;margin-top:1rem;background:var(--navy-800);color:var(--white);}
 </style>
 </head>
 <body>
@@ -78,9 +101,18 @@
   <p>Edite, ative/desative, adicione ou remova produtos aqui. Depois baixe o arquivo atualizado e suba no GitHub.</p>
 </header>
 
+<div class="faixa-rascunho" id="faixa-rascunho" style="display:none;">
+  <span id="texto-rascunho"></span>
+  <span>
+    <button class="btn-restaurar" id="btn-restaurar">Continuar de onde parei</button>
+    <button class="btn-descartar" id="btn-descartar">Começar do zero</button>
+  </span>
+</div>
+
 <div class="barra">
   <input type="search" id="campo-busca-admin" placeholder="Buscar por código ou descrição..." autocomplete="off">
   <span class="contador" id="contador-admin"></span>
+  <button class="btn-cat" id="btn-categorias">🏷️ Categorias</button>
   <button class="btn-add" id="btn-adicionar">+ Adicionar produto</button>
   <button class="btn-baixar" id="btn-baixar">⬇️ Baixar produtos.js atualizado</button>
 </div>
@@ -103,7 +135,19 @@
 <datalist id="lista-categorias-conhecidas"></datalist>
 
 <div class="rodape-fixo">
-  <span class="aviso" id="aviso-baixo">As alterações ficam só nesta tela até você clicar em "Baixar produtos.js atualizado".</span>
+  <span class="aviso" id="aviso-baixo">Toda alteração aqui é salva automaticamente neste navegador — mas só vale pro catálogo de verdade depois que você clica em "Baixar produtos.js atualizado" e sobe no GitHub.</span>
+</div>
+
+<div class="modal-fundo" id="modal-categorias">
+  <div class="modal-caixa">
+    <h2>Gerenciar categorias</h2>
+    <div id="lista-categorias-modal"></div>
+    <div class="nova-categoria">
+      <input type="text" id="campo-nova-categoria" placeholder="Nome da nova categoria">
+      <button class="btn-add" id="btn-nova-categoria" type="button">+ Adicionar</button>
+    </div>
+    <button class="btn-fechar-modal" id="btn-fechar-categorias" type="button">Fechar</button>
+  </div>
 </div>
 
 <script src="produtos.js"></script>
@@ -111,31 +155,85 @@
 (function () {
   "use strict";
 
-  var dados = (typeof PRODUTOS_DADOS !== "undefined" ? PRODUTOS_DADOS : []).map(function (p) {
+  var CHAVE_RASCUNHO = "topmix_admin_rascunho_v1";
+
+  var dadosOriginais = (typeof PRODUTOS_DADOS !== "undefined" ? PRODUTOS_DADOS : []).map(function (p) {
     return { codigo: p.codigo, descricao: p.descricao, categoria: p.categoria || "", ativo: p.ativo !== false };
   });
+  var dados = dadosOriginais;
 
-  var CATEGORIAS_CONHECIDAS = [
+  var categoriasDisponiveis = [
     "Soldagem", "Abrasivos", "Tintas e Pintura", "Ferramentas Elétricas",
     "Ferramentas Manuais", "Brocas e Acessórios", "Fixadores e Química",
     "EPI - Proteção", "Máquinas e Equipamentos", "Outros"
   ];
-  var listaCategorias = document.getElementById("lista-categorias-conhecidas");
-  CATEGORIAS_CONHECIDAS.forEach(function (c) {
-    var opt = document.createElement("option");
-    opt.value = c;
-    listaCategorias.appendChild(opt);
+  dadosOriginais.forEach(function (d) {
+    if (d.categoria && categoriasDisponiveis.indexOf(d.categoria) === -1) categoriasDisponiveis.push(d.categoria);
   });
 
   var corpo = document.getElementById("corpo-tabela");
   var campoBusca = document.getElementById("campo-busca-admin");
   var contador = document.getElementById("contador-admin");
   var avisoBaixo = document.getElementById("aviso-baixo");
+  var listaCategorias = document.getElementById("lista-categorias-conhecidas");
+  var faixaRascunho = document.getElementById("faixa-rascunho");
+  var textoRascunho = document.getElementById("texto-rascunho");
 
   function normalizar(t) {
     return String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   }
 
+  function atualizarDatalist() {
+    listaCategorias.innerHTML = "";
+    categoriasDisponiveis.forEach(function (c) {
+      var opt = document.createElement("option");
+      opt.value = c;
+      listaCategorias.appendChild(opt);
+    });
+  }
+
+  // ---------------- Rascunho automático (localStorage) ----------------
+  var timeoutRascunho = null;
+  function salvarRascunho() {
+    clearTimeout(timeoutRascunho);
+    timeoutRascunho = setTimeout(function () {
+      try {
+        localStorage.setItem(CHAVE_RASCUNHO, JSON.stringify({
+          data: new Date().toISOString(),
+          dados: dados,
+          categorias: categoriasDisponiveis
+        }));
+      } catch (e) {}
+    }, 400);
+  }
+
+  function verificarRascunhoSalvo() {
+    var bruto;
+    try { bruto = localStorage.getItem(CHAVE_RASCUNHO); } catch (e) { return; }
+    if (!bruto) return;
+    var rascunho;
+    try { rascunho = JSON.parse(bruto); } catch (e) { return; }
+    if (!rascunho || !Array.isArray(rascunho.dados) || !rascunho.dados.length) return;
+
+    var dataFormatada = "";
+    try { dataFormatada = new Date(rascunho.data).toLocaleString("pt-BR"); } catch (e) {}
+    textoRascunho.textContent = "📝 Encontramos um rascunho salvo automaticamente" + (dataFormatada ? " em " + dataFormatada : "") + " com alterações que você ainda não baixou.";
+    faixaRascunho.style.display = "flex";
+
+    document.getElementById("btn-restaurar").addEventListener("click", function () {
+      dados = rascunho.dados;
+      if (Array.isArray(rascunho.categorias)) categoriasDisponiveis = rascunho.categorias;
+      faixaRascunho.style.display = "none";
+      atualizarDatalist();
+      renderizarTudo();
+    });
+    document.getElementById("btn-descartar").addEventListener("click", function () {
+      try { localStorage.removeItem(CHAVE_RASCUNHO); } catch (e) {}
+      faixaRascunho.style.display = "none";
+    });
+  }
+
+  // ---------------- Tabela ----------------
   function criarLinha(item, index, ehNova) {
     var tr = document.createElement("tr");
     tr.dataset.index = index;
@@ -145,7 +243,7 @@
     var tdCod = document.createElement("td"); tdCod.className = "col-codigo";
     var inCod = document.createElement("input");
     inCod.className = "campo-codigo"; inCod.type = "text"; inCod.inputMode = "numeric";
-    inCod.value = item.codigo === null ? "" : item.codigo;
+    inCod.value = item.codigo === null || item.codigo === undefined ? "" : item.codigo;
     tdCod.appendChild(inCod);
 
     var tdDesc = document.createElement("td");
@@ -175,19 +273,27 @@
       var v = inCod.value.replace(/[^0-9]/g, "");
       inCod.value = v;
       dados[index].codigo = v === "" ? null : parseInt(v, 10);
+      tr.classList.remove("linha-erro");
+      salvarRascunho();
     });
-    inDesc.addEventListener("input", function () { dados[index].descricao = inDesc.value; });
-    inCat.addEventListener("input", function () { dados[index].categoria = inCat.value; });
+    inDesc.addEventListener("input", function () {
+      dados[index].descricao = inDesc.value;
+      tr.classList.remove("linha-erro");
+      salvarRascunho();
+    });
+    inCat.addEventListener("input", function () { dados[index].categoria = inCat.value; salvarRascunho(); });
     chk.addEventListener("change", function () {
       dados[index].ativo = chk.checked;
       tr.classList.toggle("inativo", !chk.checked);
       atualizarContador();
+      salvarRascunho();
     });
     btnRem.addEventListener("click", function () {
       if (!confirm("Remover o produto \"" + (dados[index].descricao || "sem descrição") + "\" da lista?")) return;
       dados[index] = null;
       tr.remove();
       atualizarContador();
+      salvarRascunho();
     });
 
     return tr;
@@ -235,34 +341,66 @@
     linha.scrollIntoView({ behavior: "smooth", block: "center" });
     linha.querySelector(".campo-descricao").focus();
     atualizarContador();
+    salvarRascunho();
   });
 
+  // ---------------- Baixar produtos.js ----------------
   document.getElementById("btn-baixar").addEventListener("click", function () {
-    var validos = dados.filter(function (d) { return d !== null; });
+    Array.from(corpo.querySelectorAll(".linha-erro")).forEach(function (tr) { tr.classList.remove("linha-erro"); });
 
-    var semCodigo = validos.filter(function (d) { return !d.codigo || d.codigo <= 0; });
-    var semDescricao = validos.filter(function (d) { return !d.descricao || !d.descricao.trim(); });
+    var indicesValidos = [];
+    dados.forEach(function (d, i) { if (d !== null) indicesValidos.push(i); });
+
+    var completamenteVazias = 0, semDescricaoIgnorados = 0, codigosAutoatribuidos = 0;
+    var candidatos = [];
+
+    indicesValidos.forEach(function (i) {
+      var d = dados[i];
+      var temCodigo = d.codigo && d.codigo > 0;
+      var temDescricao = d.descricao && d.descricao.trim();
+      if (!temCodigo && !temDescricao) { completamenteVazias++; return; }
+      if (!temDescricao) { semDescricaoIgnorados++; return; }
+      candidatos.push({ indice: i, item: d, temCodigoOriginal: !!temCodigo });
+    });
+
+    var maiorCodigoAtual = candidatos.reduce(function (max, c) { return c.temCodigoOriginal && c.item.codigo > max ? c.item.codigo : max; }, 0);
+    candidatos.forEach(function (c) {
+      if (!c.temCodigoOriginal) {
+        maiorCodigoAtual++;
+        c.item.codigo = maiorCodigoAtual;
+        codigosAutoatribuidos++;
+      }
+    });
+
     var contagemCodigos = {};
-    validos.forEach(function (d) { contagemCodigos[d.codigo] = (contagemCodigos[d.codigo] || 0) + 1; });
-    var duplicados = Object.keys(contagemCodigos).filter(function (c) { return contagemCodigos[c] > 1; });
+    candidatos.forEach(function (c) { contagemCodigos[c.item.codigo] = (contagemCodigos[c.item.codigo] || 0) + 1; });
+    var codigosDuplicados = Object.keys(contagemCodigos).filter(function (c) { return contagemCodigos[c] > 1; });
 
-    if (semCodigo.length || semDescricao.length || duplicados.length) {
-      var msg = "Antes de baixar, corrija:\n";
-      if (semCodigo.length) msg += "- " + semCodigo.length + " produto(s) sem código válido\n";
-      if (semDescricao.length) msg += "- " + semDescricao.length + " produto(s) sem descrição\n";
-      if (duplicados.length) msg += "- código(s) repetido(s): " + duplicados.join(", ") + "\n";
-      avisoBaixo.textContent = msg.replace(/\n/g, " ");
+    if (codigosDuplicados.length) {
+      var primeiraLinhaErro = null;
+      candidatos.forEach(function (c) {
+        if (codigosDuplicados.indexOf(String(c.item.codigo)) !== -1) {
+          var tr = corpo.querySelector('tr[data-index="' + c.indice + '"]');
+          if (tr) {
+            tr.classList.add("linha-erro");
+            if (!primeiraLinhaErro) primeiraLinhaErro = tr;
+          }
+        }
+      });
+      avisoBaixo.textContent = "Existem produtos com código repetido (destacados em vermelho na tabela): " + codigosDuplicados.join(", ") + ". Corrija antes de baixar.";
       avisoBaixo.classList.add("erro");
-      alert(msg);
+      if (primeiraLinhaErro) primeiraLinhaErro.scrollIntoView({ behavior: "smooth", block: "center" });
+      alert("Encontrei produtos com o mesmo código: " + codigosDuplicados.join(", ") + ".\n\nDestaquei essas linhas em vermelho na tabela pra você corrigir. Nada foi baixado ainda.");
       return;
     }
     avisoBaixo.classList.remove("erro");
 
+    var validos = candidatos.map(function (c) { return c.item; });
     validos.sort(function (a, b) { return a.codigo - b.codigo; });
 
     var linhas = validos.map(function (d) {
       return "{codigo:" + d.codigo + ",descricao:" + JSON.stringify(d.descricao.trim()) +
-        ",categoria:" + JSON.stringify(d.categoria.trim() || "Outros") + ",ativo:" + (d.ativo ? "true" : "false") + "}";
+        ",categoria:" + JSON.stringify((d.categoria || "").trim() || "Outros") + ",ativo:" + (d.ativo ? "true" : "false") + "}";
     });
 
     var conteudo =
@@ -279,8 +417,91 @@
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    var avisos = [];
+    if (completamenteVazias) avisos.push(completamenteVazias + " linha(s) em branco (esquecidas de teste) foram ignoradas");
+    if (semDescricaoIgnorados) avisos.push(semDescricaoIgnorados + " produto(s) com código mas sem descrição ficaram de fora — preencha a descrição e baixe de novo se quiser incluí-los");
+    if (codigosAutoatribuidos) avisos.push(codigosAutoatribuidos + " produto(s) sem código ganharam um código novo automaticamente");
+    if (avisos.length) {
+      avisoBaixo.textContent = "Arquivo baixado. Só um aviso: " + avisos.join("; ") + ".";
+    } else {
+      avisoBaixo.textContent = "Arquivo baixado com sucesso — " + validos.length + " produtos.";
+    }
   });
 
+  // ---------------- Gerenciar categorias ----------------
+  var modalCategorias = document.getElementById("modal-categorias");
+  var listaCategoriasModal = document.getElementById("lista-categorias-modal");
+
+  function contarPorCategoria(cat) {
+    return dados.filter(function (d) { return d !== null && d.categoria === cat; }).length;
+  }
+
+  function renderizarModalCategorias() {
+    listaCategoriasModal.innerHTML = "";
+    categoriasDisponiveis.forEach(function (cat, idx) {
+      var linha = document.createElement("div");
+      linha.className = "linha-categoria";
+
+      var input = document.createElement("input");
+      input.type = "text"; input.value = cat; input.dataset.original = cat;
+
+      var contagem = document.createElement("span");
+      contagem.className = "contagem-cat";
+      contagem.textContent = contarPorCategoria(cat) + " produto(s)";
+
+      linha.appendChild(input); linha.appendChild(contagem);
+      listaCategoriasModal.appendChild(linha);
+
+      input.addEventListener("change", function () {
+        var novoNome = input.value.trim();
+        var nomeAntigo = input.dataset.original;
+        if (!novoNome || novoNome === nomeAntigo) { input.value = nomeAntigo; return; }
+
+        dados.forEach(function (d, i) {
+          if (d && d.categoria === nomeAntigo) {
+            d.categoria = novoNome;
+            var trCampo = corpo.querySelector('tr[data-index="' + i + '"] .campo-categoria');
+            if (trCampo) trCampo.value = novoNome;
+          }
+        });
+
+        if (categoriasDisponiveis.indexOf(novoNome) === -1) {
+          categoriasDisponiveis[idx] = novoNome;
+        } else {
+          categoriasDisponiveis.splice(idx, 1);
+        }
+        atualizarDatalist();
+        renderizarModalCategorias();
+        salvarRascunho();
+      });
+    });
+  }
+
+  document.getElementById("btn-categorias").addEventListener("click", function () {
+    renderizarModalCategorias();
+    modalCategorias.classList.add("aberto");
+  });
+  document.getElementById("btn-fechar-categorias").addEventListener("click", function () {
+    modalCategorias.classList.remove("aberto");
+  });
+  modalCategorias.addEventListener("click", function (e) { if (e.target === modalCategorias) modalCategorias.classList.remove("aberto"); });
+
+  document.getElementById("btn-nova-categoria").addEventListener("click", function () {
+    var campo = document.getElementById("campo-nova-categoria");
+    var nome = campo.value.trim();
+    if (!nome) return;
+    if (categoriasDisponiveis.indexOf(nome) !== -1) { alert("Essa categoria já existe."); return; }
+    categoriasDisponiveis.push(nome);
+    campo.value = "";
+    atualizarDatalist();
+    renderizarModalCategorias();
+    salvarRascunho();
+  });
+
+  // ---------------- Inicialização ----------------
+  atualizarDatalist();
+  verificarRascunhoSalvo();
   renderizarTudo();
 })();
 </script>
