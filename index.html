@@ -298,7 +298,10 @@
   var CATEGORIAS_DISPONIVEIS = [];
   (function () {
     var vistas = new Set();
-    DADOS.slice().sort(function (a, b) { return a.codigo - b.codigo; }).forEach(function (p) {
+    // Ordem alfabética por descrição dentro de cada categoria: facilita achar
+    // o item (produtos parecidos ficam juntos), o que ajuda mais na conversão
+    // do que ordenar por código (que é só a ordem que entrou no sistema).
+    DADOS.slice().sort(function (a, b) { return a.descricao.localeCompare(b.descricao, "pt-BR"); }).forEach(function (p) {
       if (!p.ativo) return;
       PRODUTOS.push([p.codigo, p.descricao]);
       PRODUTOS_MAP.set(String(p.codigo), p.descricao);
@@ -651,10 +654,13 @@
     capa.appendChild(logoImg); capa.appendChild(tituloDestaque); capa.appendChild(tituloPrincipal); capa.appendChild(sub);
     areaImpressao.appendChild(capa);
 
+    // Ordem pensada pra conversão: começa pelos consumíveis que os clientes
+    // recompram com mais frequência e urgência (eletrodo, disco, parafuso...),
+    // e termina nos itens de compra mais espaçada e ticket mais alto (máquinas).
     var ORDEM_CATEGORIAS = [
-      "Soldagem", "Abrasivos", "Tintas e Pintura", "Ferramentas Elétricas",
-      "Ferramentas Manuais", "Brocas e Acessórios", "Fixadores e Química",
-      "EPI - Proteção", "Máquinas e Equipamentos"
+      "Soldagem", "Abrasivos", "Fixadores e Química", "Brocas e Acessórios",
+      "Tintas e Pintura", "EPI - Proteção", "Ferramentas Manuais",
+      "Ferramentas Elétricas", "Máquinas e Equipamentos"
     ];
     var categoriaFiltroAtual = filtroCategoria.value;
     var porCategoria = new Map();
